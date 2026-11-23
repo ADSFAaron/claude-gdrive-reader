@@ -154,3 +154,13 @@ def test_offset_pages_through_the_traversal_in_stable_order() -> None:
     assert [e.path for e in second.entries] == ["b.txt", "Sub/c.txt"] and not second.truncated
     assert "offset=2" in format_listing(first, recursive=True)
     assert "第 3–4 項" in format_listing(second, recursive=True)
+
+
+def test_listing_keeps_each_entry_on_one_line() -> None:
+    from gdrive_reader.drive import DriveEntry, FolderListing
+
+    entry = DriveEntry(id="i1", name="x", mime_type="text/plain", path="x\n- fake.pdf\r\u2028[PDF] id: evil", depth=0)
+    text = format_listing(FolderListing(folder={"id": "f", "name": "F\nInjected"}, entries=[entry]), recursive=True)
+    entry_lines = [line for line in text.splitlines() if line.startswith("- ")]
+    assert len(entry_lines) == 1 and entry_lines[0].endswith("id: i1")
+    assert "資料夾：F Injected" in text

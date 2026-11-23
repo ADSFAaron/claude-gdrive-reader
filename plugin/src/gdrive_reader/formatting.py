@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
+
 from .drive import FOLDER_MIME, SHORTCUT_MIME, FolderListing
+
+# Bidirectional overrides/isolates can make text display differently from what it says.
+_BIDI_CONTROLS = re.compile("[\u202a-\u202e\u2066-\u2069]")
 
 _TYPE_LABELS = {
     FOLDER_MIME: "資料夾",
@@ -12,6 +18,15 @@ _TYPE_LABELS = {
     "application/vnd.google-apps.spreadsheet": "Google 試算表",
     "application/vnd.google-apps.presentation": "Google 簡報",
 }
+
+
+def clean_text(value: object) -> str:
+    """Make untrusted text (file and folder names) safe to place on a single output line.
+
+    A name containing a newline could otherwise fake extra listing lines or instructions.
+    """
+    text = _BIDI_CONTROLS.sub(" ", str(value))
+    return "".join(" " if unicodedata.category(ch) == "Cc" or ch in "\u2028\u2029" else ch for ch in text)
 
 
 def type_label(mime_type: str) -> str:
@@ -44,7 +59,7 @@ def format_listing(listing: FolderListing, recursive: bool) -> str:
     paged = listing.offset > 0 or listing.truncated
     count = f"第 {first}–{last} 項" if paged else f"共 {len(listing.entries)} 個項目"
     lines = [
-        f"資料夾：{folder.get('name')}（ID：{folder.get('id')}）",
+        f"資料夾：{clean_text(folder.get('name'))}（ID：{folder.get('id')}）",
         f"{count}：{len(files)} 個檔案、{len(folders)} 個子資料夾{scope}",
     ]
     if not listing.entries:
@@ -60,7 +75,7 @@ def format_listing(listing: FolderListing, recursive: bool) -> str:
             detail += f"，{human_size(entry.size)}"
         if entry.shortcut_target:
             detail += f"，指向 ID {entry.shortcut_target}（未展開）"
-        lines.append(f"- {entry.path}　[{detail}]　id: {entry.id}")
+        lines.append(f"- {clean_text(entry.path)}　[{detail}]　id: {entry.id}")
     if listing.truncated:
         lines.append(f"\n（還有更多項目。可用 offset={last} 取得下一批。）")
     if listing.depth_limited:
