@@ -167,10 +167,18 @@ class LoginFlow:
     def _expire(self) -> None:
         self._finish(LoginResult("error", "授權流程逾時（10 分鐘內未完成）。請重新呼叫 connect_google。"))
 
-    def _finish(self, result: LoginResult) -> bool:
+    def _finish(self, result: LoginResult, on_commit: Callable[[], None] | None = None) -> bool:
+        """Record the outcome once. ``on_commit`` runs under the lock, only if this call wins.
+
+        Persisting the token inside the lock closes a race: the code exchange is a network
+        call, and the flow may be cancelled (disconnect_google) or time out while it runs.
+        A token must never be written after the flow has already reported cancellation.
+        """
         with self._lock:
             if self._done.is_set():
                 return False
+            if on_commit is not None:
+                on_commit()
             self.result = result
             self._done.set()
         self._timer.cancel()
@@ -224,6 +232,10 @@ class LoginFlow:
             )
             return False, "缺少 Drive 權限", "同意畫面中沒有勾選 Drive 權限。請回到 Claude Code 重新授權並勾選。"
 
-        self._store.save(token)
-        self._finish(LoginResult("success", "Google 帳號已連接。"))
+        if not self._finish(LoginResult("success", "Google 帳號已連接。"), on_commit=lambda: self._store.save(token)):
+            return (
+                False,
+                "授權已取消",
+                "這次授權在完成前已被取消或逾時，沒有儲存任何授權資料。請回到 Claude Code 重新授權。",
+            )
         return True, "授權完成", "已連接 Google 帳號，可以關閉這個分頁，回到 Claude Code。"

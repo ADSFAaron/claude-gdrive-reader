@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 import urllib.error
 import urllib.request
 from urllib.parse import parse_qs, urlparse
@@ -11,7 +13,9 @@ import respx
 from conftest import BACKEND, DRIVE_READONLY, make_token
 from gdrive_reader import tools
 from gdrive_reader.errors import NotAuthenticated, ReauthRequired
+from gdrive_reader.oauth import LoginFlow
 from gdrive_reader.services import Services
+from gdrive_reader.token_store import TokenStore
 
 
 def _hit_loopback(url: str) -> tuple[int, str]:
@@ -122,3 +126,33 @@ def test_connect_short_circuits_when_already_connected(services: Services, mock_
     )
     assert "me@example.com" in tools.connect(services, wait_seconds=0)
     assert services.opened_urls == []  # type: ignore[attr-defined]
+
+
+class _SlowBroker:
+    """Code exchange that takes a while, so the flow can be cancelled mid-flight."""
+
+    def authorize_url(self, code_challenge: str, state: str) -> str:
+        return f"{BACKEND}/oauth/start?state={state}"
+
+    def exchange_code(self, code: str, code_verifier: str) -> dict:
+        time.sleep(0.5)
+        return {"access_token": "a", "refresh_token": "r", "expires_in": 3600, "scope": DRIVE_READONLY}
+
+
+def test_cancel_during_code_exchange_does_not_persist_token(tmp_path, mock_http: respx.MockRouter) -> None:
+    mock_http.route(host="127.0.0.1").pass_through()
+    store = TokenStore(tmp_path / "token.json")
+    flow = LoginFlow(_SlowBroker(), store)  # type: ignore[arg-type]
+    port = flow.state.split(".")[0]
+    result: dict[str, tuple[int, str]] = {}
+    browser = threading.Thread(
+        target=lambda: result.update(page=_hit_loopback(f"http://127.0.0.1:{port}/callback?code=c&state={flow.state}"))
+    )
+    browser.start()
+    time.sleep(0.15)
+    flow.cancel()  # e.g. disconnect_google, or the 10-minute timer firing
+    browser.join()
+
+    assert flow.result.status == "error"
+    assert store.load() is None
+    assert result["page"][0] == 400 and "沒有儲存" in result["page"][1]
