@@ -9,6 +9,7 @@ from .errors import InvalidReference
 
 _ID = r"[A-Za-z0-9_-]{10,}"
 _ID_RE = re.compile(rf"^{_ID}$")
+_MY_DRIVE_RE = re.compile(r"/drive/(?:u/\d+/)?my-drive/?$")
 _PATH_PATTERNS = (
     re.compile(rf"/folders/({_ID})"),
     re.compile(rf"/file/d/({_ID})"),
@@ -19,9 +20,9 @@ _PATH_PATTERNS = (
 def parse_drive_id(ref: str) -> str:
     """Return the Drive ID referenced by ``ref``.
 
-    Accepts a bare ID, ``root`` (the user's My Drive), and the URL shapes Google
-    Drive and Docs produce: ``/drive/folders/<id>``, ``/file/d/<id>/view``,
-    ``/document/d/<id>/edit``, ``?id=<id>``.
+    Accepts a bare ID, ``root`` or a ``/drive/my-drive`` link (the user's My Drive), and
+    the URL shapes Google Drive and Docs produce: ``/drive/folders/<id>``,
+    ``/file/d/<id>/view``, ``/document/d/<id>/edit``, ``?id=<id>``.
     """
     cleaned = ref.strip().strip("<>\"'`")
     if not cleaned:
@@ -32,6 +33,8 @@ def parse_drive_id(ref: str) -> str:
     parsed = urlparse(cleaned if "://" in cleaned else f"https://{cleaned}")
     host = (parsed.hostname or "").lower()
     if host == "google.com" or host.endswith(".google.com"):
+        if _MY_DRIVE_RE.search(parsed.path):
+            return "root"
         for pattern in _PATH_PATTERNS:
             match = pattern.search(parsed.path)
             if match:

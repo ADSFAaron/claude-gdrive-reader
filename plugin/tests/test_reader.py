@@ -189,3 +189,9 @@ def test_large_image_is_probed_not_fully_downloaded() -> None:
     out = read_file(drive_client(), "big")
     assert media.calls.last.request.headers["Range"] == "bytes=0-65535"
     assert "實際讀取了開頭 64.0 KB，檔案共 5.0 MB" in out and "不解析圖片內容" in out
+
+
+@respx.mock
+def test_corrupt_pdf_is_reported_not_raised() -> None:
+    _file("bad", {"name": "bad.pdf", "mimeType": "application/pdf", "size": "9"}, b"%PDF-junk")
+    assert "無法解析為 PDF" in read_file(drive_client(), "bad")

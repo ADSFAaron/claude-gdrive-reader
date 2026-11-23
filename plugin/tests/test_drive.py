@@ -164,3 +164,12 @@ def test_listing_keeps_each_entry_on_one_line() -> None:
     entry_lines = [line for line in text.splitlines() if line.startswith("- ")]
     assert len(entry_lines) == 1 and entry_lines[0].endswith("id: i1")
     assert "資料夾：F Injected" in text
+
+
+@respx.mock
+def test_non_json_success_response_is_a_clear_error() -> None:
+    from gdrive_reader.errors import DriveError
+
+    respx.get(f"{FILES}/x").mock(return_value=httpx.Response(200, text="<html>proxy login</html>"))
+    with pytest.raises(DriveError, match="無法解析"):
+        drive_client().get_metadata("x")

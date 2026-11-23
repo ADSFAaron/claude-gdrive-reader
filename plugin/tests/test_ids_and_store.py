@@ -32,6 +32,13 @@ def test_parse_drive_id_accepts_links_and_ids(ref: str) -> None:
     assert parse_drive_id(ref) == FOLDER_ID
 
 
+@pytest.mark.parametrize(
+    "ref", ["https://drive.google.com/drive/my-drive", "https://drive.google.com/drive/u/0/my-drive", "root"]
+)
+def test_my_drive_links_map_to_root(ref: str) -> None:
+    assert parse_drive_id(ref) == "root"
+
+
 @pytest.mark.parametrize("ref", ["", "hello", "https://example.com/drive/folders/1FakeFolderIdForTests", "../../etc"])
 def test_parse_drive_id_rejects_garbage(ref: str) -> None:
     with pytest.raises(InvalidReference):

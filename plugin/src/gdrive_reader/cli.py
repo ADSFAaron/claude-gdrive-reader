@@ -11,6 +11,7 @@ GDRIVE_READER_DATA_DIR says otherwise.
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 
 from . import tools
@@ -61,6 +62,13 @@ def main(argv: list[str] | None = None) -> int:
             )
     except GDriveReaderError as exc:
         print(f"錯誤：{exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).debug("Unexpected error", exc_info=True)
+        print(
+            f"錯誤：發生未預期的錯誤（{type(exc).__name__}）。設定 GDRIVE_READER_LOG_LEVEL=DEBUG 可查看詳細資訊。",
+            file=sys.stderr,
+        )
         return 1
     finally:
         svc.close()

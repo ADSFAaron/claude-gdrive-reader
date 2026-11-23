@@ -16,7 +16,6 @@ from typing import Any
 
 from charset_normalizer import from_bytes
 from pypdf import PdfReader
-from pypdf.errors import PdfReadError
 
 from .drive import FOLDER_MIME, SHORTCUT_MIME, DriveClient
 from .errors import InvalidReference
@@ -144,9 +143,11 @@ def _read_pdf(meta: dict[str, Any], data: bytes, start_page: int, max_pages: int
         if pdf.is_encrypted and not pdf.decrypt(""):
             return ReadOutcome(meta, f"已下載 PDF（{size}），但檔案有密碼保護，無法抽取文字。", notes=notes)
         total = len(pdf.pages)
-    except (PdfReadError, ValueError, OSError):
-        log.info("pypdf could not parse file %s", meta.get("id"))
-        return ReadOutcome(meta, f"已下載檔案（{size}），但無法解析為 PDF（檔案可能損毀）。", notes=notes)
+    except Exception:  # noqa: BLE001 - pypdf raises many unrelated types (PdfReadError, DependencyError...)
+        log.info("pypdf could not parse file %s", meta.get("id"), exc_info=True)
+        return ReadOutcome(
+            meta, f"已下載檔案（{size}），但無法解析為 PDF（檔案可能損毀，或使用不支援的加密方式）。", notes=notes
+        )
 
     first = min(max(1, start_page), max(total, 1))
     last = min(total, first + max(1, max_pages) - 1)

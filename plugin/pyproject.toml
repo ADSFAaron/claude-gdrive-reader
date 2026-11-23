@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "mcp>=2.3,<3",
     "httpx>=0.28,<1",
-    "pypdf>=6,<8",
+    "pypdf[crypto]>=6,<8",  # crypto: AES-encrypted PDFs need the cryptography package
     "charset-normalizer>=3.3,<4",
 ]
 

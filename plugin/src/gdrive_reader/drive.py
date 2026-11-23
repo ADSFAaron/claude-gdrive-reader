@@ -233,7 +233,13 @@ class DriveClient:
 
     def _get_json(self, path: str, params: dict[str, str]) -> dict[str, Any]:
         resp = self._send(path, params, stream=False)
-        return resp.json()
+        try:
+            data = resp.json()
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            raise DriveError("Google Drive 回傳了無法解析的回應，請稍後再試。", status=resp.status_code)
+        return data
 
     def _get_bytes(self, path: str, params: dict[str, str], max_bytes: int) -> bytes:
         resp = self._send(path, params, stream=True)
@@ -339,7 +345,8 @@ def _map_error(status: int, reason: str | None, message: str) -> GDriveReaderErr
     if status == 404:
         return NotFoundError(
             "找不到這個檔案或資料夾，或目前登入的 Google 帳號沒有存取權。"
-            "請確認連結正確，並確認這個帳號已被分享至少「檢視者」權限。",
+            "請確認連結正確，並確認這個帳號已被分享至少「檢視者」權限。"
+            "若你提供的是檔名而不是 ID，請先用 list_folder 列出所在資料夾，再用列出的 id 讀取。",
             status,
             reason,
         )
