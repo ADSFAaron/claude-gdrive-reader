@@ -198,6 +198,19 @@ class LoginFlow:
         self._server.server_close()
 
     def _handle_callback(self, params: dict[str, str]) -> tuple[bool, str, str]:
+        """Entry point for the loopback request. Always returns a page and never leaves the flow pending.
+
+        An exception escaping here would reach http.server, which drops the connection: the
+        browser would get an empty response and the login would sit "pending" until timeout.
+        """
+        try:
+            return self._process_callback(params)
+        except Exception:  # noqa: BLE001
+            log.exception("Unexpected error while handling the OAuth callback.")
+            self._finish(LoginResult("error", "處理授權回呼時發生未預期的錯誤，請重新呼叫 connect_google。"))
+            return False, "授權未完成", "發生未預期的錯誤，請回到 Claude Code 重新授權。"
+
+    def _process_callback(self, params: dict[str, str]) -> tuple[bool, str, str]:
         if self._done.is_set():
             return False, "這次授權已經處理過", "請回到 Claude Code。如需重新授權，請再呼叫 connect_google。"
         if not hmac.compare_digest(params.get("state", ""), self.state):
@@ -239,12 +252,30 @@ class LoginFlow:
             )
             return False, "缺少 Drive 權限", "同意畫面中沒有勾選 Drive 權限。請回到 Claude Code 重新授權並勾選。"
 
-        if not self._finish(LoginResult("success", "Google 帳號已連接。"), on_commit=lambda: self._store.save(token)):
+        try:
+            committed = self._finish(
+                LoginResult("success", "Google 帳號已連接。"), on_commit=lambda: self._store.save(token)
+            )
+        except OSError as exc:  # disk full, read-only home, permissions...
+            log.error("Could not write the token file %s: %s", self._store.path, exc.strerror or exc)
+            self._finish(
+                LoginResult(
+                    "error",
+                    f"已完成 Google 授權，但無法把授權資料寫入 {self._store.path}"
+                    f"（{exc.strerror or type(exc).__name__}）。"
+                    "請確認磁碟空間與資料夾權限後，重新呼叫 connect_google。",
+                )
+            )
+            return False, "授權未完成", "無法在本機儲存授權資料（磁碟空間或權限問題）。請回到 Claude Code 查看說明。"
+        if not committed:
             return (
                 False,
                 "授權已取消",
                 "這次授權在完成前已被取消或逾時，沒有儲存任何授權資料。請回到 Claude Code 重新授權。",
             )
         if self._on_success is not None:
-            self._on_success()
+            try:
+                self._on_success()
+            except Exception:  # noqa: BLE001 - the login itself succeeded; a listener must not undo that
+                log.exception("on_success listener failed")
         return True, "授權完成", "已連接 Google 帳號，可以關閉這個分頁，回到 Claude Code。"

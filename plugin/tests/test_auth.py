@@ -160,3 +160,35 @@ def test_cancel_during_code_exchange_does_not_persist_token(tmp_path, mock_http:
     assert flow.result.status == "error"
     assert store.load() is None
     assert result["page"][0] == 400 and "沒有儲存" in result["page"][1]
+
+
+class _FullDiskStore(TokenStore):
+    def save(self, token) -> None:  # noqa: ANN001
+        raise OSError(28, "No space left on device")
+
+
+class _QuickBroker(_SlowBroker):
+    def exchange_code(self, code: str, code_verifier: str) -> dict:
+        return {"access_token": "a", "refresh_token": "r", "expires_in": 3600, "scope": DRIVE_READONLY}
+
+
+def test_token_write_failure_answers_the_browser_and_ends_the_flow(tmp_path, mock_http: respx.MockRouter) -> None:
+    mock_http.route(host="127.0.0.1").pass_through()
+    flow = LoginFlow(_QuickBroker(), _FullDiskStore(tmp_path / "token.json"))  # type: ignore[arg-type]
+    port = flow.state.split(".")[0]
+
+    status, page = _hit_loopback(f"http://127.0.0.1:{port}/callback?code=c&state={flow.state}")
+
+    assert status == 400 and "磁碟空間或權限" in page  # the browser gets a page, not a dropped connection
+    assert flow.finished and flow.result.status == "error"
+    assert "No space left on device" in flow.result.message
+
+
+def test_unexpected_callback_error_still_answers_the_browser(tmp_path, mock_http: respx.MockRouter) -> None:
+    mock_http.route(host="127.0.0.1").pass_through()
+
+    flow = LoginFlow(_QuickBroker(), TokenStore(tmp_path / "token.json"))  # type: ignore[arg-type]
+    flow._process_callback = lambda params: 1 / 0  # type: ignore[method-assign]  # noqa: SLF001
+    port = flow.state.split(".")[0]
+    status, _ = _hit_loopback(f"http://127.0.0.1:{port}/callback?code=c&state={flow.state}")
+    assert status == 400 and flow.finished and flow.result.status == "error"
