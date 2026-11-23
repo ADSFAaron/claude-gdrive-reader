@@ -1,7 +1,7 @@
 {
   "name": "gdrive-reader",
   "displayName": "Google Drive Reader",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Read-only Google Drive access for Claude Code: sign in with OAuth, list folders (including subfolders), and read PDFs, text files and Google Docs.",
   "author": {
     "name": "haoder"
