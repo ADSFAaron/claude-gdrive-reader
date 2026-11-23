@@ -72,6 +72,12 @@ class TokenStore:
 
     def save(self, token: StoredToken) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # mkdir's mode only applies to a directory it creates; ${CLAUDE_PLUGIN_DATA} already
+        # exists (usually 0755), so tighten it explicitly.
+        try:
+            os.chmod(self.path.parent, 0o700)
+        except OSError:
+            log.warning("Could not restrict permissions on %s.", self.path.parent)
         payload = json.dumps({"version": _FORMAT_VERSION, **asdict(token)}).encode("utf-8")
         tmp = self.path.with_name(self.path.name + ".tmp")
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

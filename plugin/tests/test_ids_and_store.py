@@ -50,6 +50,14 @@ def test_token_store_round_trip_with_private_permissions(store: TokenStore) -> N
     assert store.delete() is False
 
 
+def test_token_store_tightens_existing_directory(tmp_path) -> None:
+    data_dir = tmp_path / "plugin-data"
+    data_dir.mkdir(mode=0o755)
+    os.chmod(data_dir, 0o755)  # noqa: S103 - simulates ${CLAUDE_PLUGIN_DATA} as Claude Code creates it
+    TokenStore(data_dir / "token.json").save(make_token())
+    assert stat.S_IMODE(os.stat(data_dir).st_mode) == 0o700
+
+
 def test_token_store_ignores_corrupt_file(store: TokenStore) -> None:
     store.path.parent.mkdir(parents=True)
     store.path.write_text("{not json")
