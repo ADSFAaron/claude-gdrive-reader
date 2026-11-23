@@ -111,6 +111,14 @@ class _ByteCache:
                 _, evicted = self._items.popitem(last=False)
                 self._size -= len(evicted)
 
+    def clear(self) -> None:
+        with self._lock:
+            self._items.clear()
+            self._size = 0
+
+    def __len__(self) -> int:
+        return len(self._items)
+
 
 class DriveClient:
     def __init__(
@@ -127,6 +135,10 @@ class DriveClient:
         self._cache = _ByteCache()
 
     # -- public API --------------------------------------------------------------
+
+    def clear_cache(self) -> None:
+        """Drop downloaded content, e.g. when the signed-in account changes or disconnects."""
+        self._cache.clear()
 
     def about(self) -> dict[str, Any]:
         return self._get_json("/about", {"fields": "user(displayName,emailAddress)"})

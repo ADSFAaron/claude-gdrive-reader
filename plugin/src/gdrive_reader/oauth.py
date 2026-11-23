@@ -138,9 +138,16 @@ class LoginResult:
 class LoginFlow:
     """One browser login attempt. Thread-safe; finishes at most once."""
 
-    def __init__(self, broker: BrokerClient, store: TokenStore, timeout: float = 600.0) -> None:
+    def __init__(
+        self,
+        broker: BrokerClient,
+        store: TokenStore,
+        timeout: float = 600.0,
+        on_success: Callable[[], None] | None = None,
+    ) -> None:
         self._broker = broker
         self._store = store
+        self._on_success = on_success
         self._verifier, challenge = make_pkce_pair()
         self._server = _LoopbackServer(self._handle_callback)
         self.state = f"{self._server.server_address[1]}.{secrets.token_urlsafe(24)}"
@@ -238,4 +245,6 @@ class LoginFlow:
                 "授權已取消",
                 "這次授權在完成前已被取消或逾時，沒有儲存任何授權資料。請回到 Claude Code 重新授權。",
             )
+        if self._on_success is not None:
+            self._on_success()
         return True, "授權完成", "已連接 Google 帳號，可以關閉這個分頁，回到 Claude Code。"

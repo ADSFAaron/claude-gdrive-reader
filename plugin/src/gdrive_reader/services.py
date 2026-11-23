@@ -46,4 +46,6 @@ def build_services(
         http=http,
         open_browser=open_browser,
     )
-    return Services(settings=settings, http=http, auth=auth, drive=DriveClient(auth, http))
+    drive = DriveClient(auth, http)
+    auth.on_account_change = drive.clear_cache
+    return Services(settings=settings, http=http, auth=auth, drive=drive)

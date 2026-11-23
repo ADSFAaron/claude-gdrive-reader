@@ -45,6 +45,9 @@ class AuthManager:
         self._clock = clock
         self._lock = threading.Lock()
         self._flow: LoginFlow | None = None
+        # Called when the signed-in account may have changed (new login or disconnect),
+        # so caches of the previous account's file content can be dropped.
+        self.on_account_change: Callable[[], None] | None = None
 
     # -- login -----------------------------------------------------------------
 
@@ -53,7 +56,7 @@ class AuthManager:
         with self._lock:
             flow = self._flow
             if flow is None or flow.finished:
-                flow = self._flow = LoginFlow(self._broker, self._store)
+                flow = self._flow = LoginFlow(self._broker, self._store, on_success=self._account_changed)
                 opened = self._try_open_browser(flow.authorize_url)
             else:
                 opened = False  # a login is already waiting in an open tab
@@ -124,4 +127,9 @@ class AuthManager:
                 except httpx.HTTPError:
                     log.warning("Token revocation request failed; deleting local token anyway.")
             had_token = self._store.delete()
-            return had_token, revoked
+        self._account_changed()
+        return had_token, revoked
+
+    def _account_changed(self) -> None:
+        if self.on_account_change is not None:
+            self.on_account_change()

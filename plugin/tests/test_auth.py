@@ -45,11 +45,13 @@ def test_login_flow_exchanges_code_and_stores_token(services: Services, mock_htt
             json={"access_token": "ya29.a", "refresh_token": "1//r", "expires_in": 3599, "scope": DRIVE_READONLY},
         )
     )
+    services.drive._cache.put(("media", "old-account-file", "v1"), b"secret")  # noqa: SLF001
     state, port = _start_flow(services)
 
     status, page = _hit_loopback(f"http://127.0.0.1:{port}/callback?code=abc&state={state}")
 
     assert status == 200 and "授權完成" in page
+    assert len(services.drive._cache) == 0  # noqa: SLF001 - previous account's content dropped
     sent = token_route.calls.last.request
     assert b'"code":"abc"' in sent.content and b"code_verifier" in sent.content
     assert services.auth._flow.result.status == "success"  # noqa: SLF001
@@ -114,9 +116,11 @@ def test_invalid_grant_clears_token_and_asks_for_reauth(services: Services, mock
 def test_disconnect_revokes_and_deletes(services: Services, mock_http: respx.MockRouter) -> None:
     services.auth._store.save(make_token())  # noqa: SLF001
     revoke = mock_http.post("https://oauth2.googleapis.com/revoke").mock(return_value=httpx.Response(200))
+    services.drive._cache.put(("media", "f", "v1"), b"content")  # noqa: SLF001
     assert "撤銷" in tools.disconnect(services)
     assert revoke.calls.last.request.content == b"token=refresh-1"
     assert services.auth.stored_token() is None
+    assert len(services.drive._cache) == 0  # noqa: SLF001
 
 
 def test_connect_short_circuits_when_already_connected(services: Services, mock_http: respx.MockRouter) -> None:
