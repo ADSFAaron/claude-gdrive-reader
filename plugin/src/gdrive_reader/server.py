@@ -106,7 +106,7 @@ def create_server(factory: Callable[[], Services] = build_services) -> MCPServer
     def list_folder(
         folder: Annotated[str, Field(description="Google Drive folder share link, URL, or folder ID.")],
         recursive: Annotated[bool, Field(description="Also list files inside subfolders.")] = True,
-        max_items: Annotated[int, Field(ge=1, le=1000, description="Maximum number of entries to return.")] = 200,
+        max_items: Annotated[int, Field(ge=1, le=300, description="Maximum number of entries to return.")] = 200,
         offset: Annotated[int, Field(ge=0, description="Skip this many entries (to fetch the next page).")] = 0,
     ) -> str:
         """List the files in a Google Drive folder (and its subfolders), with each file's type, size,
