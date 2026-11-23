@@ -1,0 +1,3 @@
+# Copy to .dev.vars for `uv run pywrangler dev` (http://localhost:8787). Never commit .dev.vars.
+GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx

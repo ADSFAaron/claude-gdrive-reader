@@ -1,0 +1,14 @@
+{
+  "name": "gdrive-reader-marketplace",
+  "description": "Read-only Google Drive access for Claude Code (OAuth take-home project).",
+  "owner": {
+    "name": "haoder"
+  },
+  "plugins": [
+    {
+      "name": "gdrive-reader",
+      "source": "./plugin",
+      "description": "Read-only Google Drive access for Claude Code (OAuth, list folders, read PDFs and text files)."
+    }
+  ]
+}

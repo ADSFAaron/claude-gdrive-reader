@@ -1,0 +1,43 @@
+[project]
+name = "gdrive-reader"
+version = "0.1.0"
+description = "MCP server for the gdrive-reader Claude Code plugin: read-only access to Google Drive folders."
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=2.3,<3",
+    "httpx>=0.28,<1",
+    "pypdf>=6,<8",
+]
+
+[project.scripts]
+gdrive-reader-mcp = "gdrive_reader.server:main"
+gdrive-reader = "gdrive_reader.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "respx>=0.22",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.13"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "A", "N"]
+ignore = ["S101", "N818"]  # asserts in tests; exception names read better without "Error"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]  # fake tokens in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["gdrive_reader", "conftest"]

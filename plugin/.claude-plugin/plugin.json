@@ -1,0 +1,18 @@
+{
+  "name": "gdrive-reader",
+  "displayName": "Google Drive Reader",
+  "version": "0.1.0",
+  "description": "Read-only Google Drive access for Claude Code: sign in with OAuth, list folders (including subfolders), and read PDFs, text files and Google Docs.",
+  "author": {
+    "name": "haoder"
+  },
+  "repository": "https://github.com/ADSFAaron/claude-gdrive-reader",
+  "license": "MIT",
+  "keywords": [
+    "google-drive",
+    "oauth",
+    "mcp",
+    "pdf"
+  ],
+  "homepage": "https://github.com/ADSFAaron/claude-gdrive-reader#readme"
+}

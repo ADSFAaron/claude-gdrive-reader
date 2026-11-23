@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gdrive-reader-auth",
+  "main": "src/worker.py",
+  "compatibility_date": "2026-11-22",
+  "compatibility_flags": ["python_workers"],
+  // Secrets (never committed): set with
+  //   npx wrangler secret put GOOGLE_CLIENT_ID
+  //   npx wrangler secret put GOOGLE_CLIENT_SECRET
+  // For `pywrangler dev`, put them in backend/.dev.vars (git-ignored).
+  //
+  // Request logs would include the one-time authorization code in /oauth/callback URLs,
+  // so persistent Workers Logs stay off. Use `npx wrangler tail` to debug live.
+  "observability": { "enabled": false }
+}
