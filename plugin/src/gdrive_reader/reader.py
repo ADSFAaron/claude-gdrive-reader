@@ -19,7 +19,8 @@ from pypdf import PdfReader
 
 from .drive import FOLDER_MIME, SHORTCUT_MIME, DriveClient
 from .errors import InvalidReference
-from .formatting import clean_text, human_size, type_label
+from .formatting import human_size, type_label
+from .sanitize import clean_text
 
 log = logging.getLogger(__name__)
 

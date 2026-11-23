@@ -28,6 +28,7 @@ from .errors import (
     RateLimitedError,
     ReauthRequired,
 )
+from .sanitize import clean_text
 
 log = logging.getLogger(__name__)
 
@@ -161,7 +162,8 @@ class DriveClient:
             if target.get("targetMimeType") == FOLDER_MIME:
                 folder = self.get_metadata(target["targetId"])
         if folder.get("mimeType") != FOLDER_MIME:
-            raise InvalidReference(f"「{folder.get('name', folder_id)}」不是資料夾。要讀取檔案內容請改用 read_file。")
+            name = clean_text(folder.get("name", folder_id))
+            raise InvalidReference(f"「{name}」不是資料夾。要讀取檔案內容請改用 read_file。")
 
         listing = FolderListing(folder=folder, offset=offset)
         queue: deque[tuple[str, str, int]] = deque([(folder["id"], "", 0)])
