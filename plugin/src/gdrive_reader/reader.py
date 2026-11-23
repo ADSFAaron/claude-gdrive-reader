@@ -24,6 +24,7 @@ from .formatting import clean_text, human_size, type_label
 log = logging.getLogger(__name__)
 
 MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
+IMAGE_PROBE_BYTES = 64 * 1024
 
 GOOGLE_EXPORTS: dict[str, tuple[str, str]] = {
     "application/vnd.google-apps.document": ("text/plain", "已匯出為純文字"),
@@ -85,7 +86,7 @@ def _read(drive: DriveClient, file_id: str, *, start_page: int, max_pages: int) 
 
     if mime in GOOGLE_EXPORTS:
         export_mime, note = GOOGLE_EXPORTS[mime]
-        data = drive.export(meta["id"], export_mime, MAX_DOWNLOAD_BYTES)
+        data = drive.export(meta["id"], export_mime, MAX_DOWNLOAD_BYTES, version=meta.get("modifiedTime"))
         return ReadOutcome(meta, f"{note}（{human_size(len(data))}）", _decode(data), notes)
 
     if mime.startswith("application/vnd.google-apps."):
@@ -100,22 +101,26 @@ def _read(drive: DriveClient, file_id: str, *, start_page: int, max_pages: int) 
         return ReadOutcome(meta, "檔案擁有者停用了檢視者的下載權限，因此無法讀取內容。", notes=notes)
 
     if mime == "application/pdf":
-        data = drive.download(meta["id"], MAX_DOWNLOAD_BYTES)
+        data = drive.download(meta["id"], MAX_DOWNLOAD_BYTES, version=meta.get("modifiedTime"))
         return _read_pdf(meta, data, start_page, max_pages, notes)
 
     if mime.startswith("text/") or mime in TEXT_MIMES:
-        data = drive.download(meta["id"], MAX_DOWNLOAD_BYTES)
+        data = drive.download(meta["id"], MAX_DOWNLOAD_BYTES, version=meta.get("modifiedTime"))
         return ReadOutcome(meta, f"已下載並讀取文字（{human_size(len(data))}）", _decode(data), notes)
 
     if mime.startswith("image/"):
-        data = drive.download(meta["id"], MAX_DOWNLOAD_BYTES)
+        # Reading the first bytes proves the content is downloadable; the rest would go unused.
+        read = drive.probe(meta["id"], IMAGE_PROBE_BYTES)
         dims = meta.get("imageMediaMetadata") or {}
         if dims.get("width") and dims.get("height"):
             notes.append(f"圖片尺寸：{dims['width']} × {dims['height']} 像素")
+        if size is None or read >= size:
+            fetched = f"已成功下載圖片（{human_size(read)}）"
+        else:
+            fetched = f"已確認可以讀取圖片內容（實際讀取了開頭 {human_size(read)}，檔案共 {human_size(size)}）"
         return ReadOutcome(
             meta,
-            f"已成功下載圖片（{human_size(len(data))}），但本工具不解析圖片內容（沒有 OCR 或影像辨識），"
-            "因此無法提供圖片中的文字或描述。",
+            f"{fetched}，但本工具不解析圖片內容（沒有 OCR 或影像辨識），因此無法提供圖片中的文字或描述。",
             notes=notes,
         )
 

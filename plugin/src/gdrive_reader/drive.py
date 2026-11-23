@@ -9,8 +9,9 @@ folders that live in shared drives work too.
 from __future__ import annotations
 
 import logging
+import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -75,6 +76,41 @@ class FolderListing:
     depth_limited: bool = False
 
 
+class _ByteCache:
+    """Small in-memory LRU for downloaded file bytes, keyed by file ID and modifiedTime.
+
+    Reading a long PDF page by page, or a long text by offset, would otherwise download
+    and parse the whole file again for every call. Keying on modifiedTime means an edited
+    file is fetched again.
+    """
+
+    def __init__(self, max_bytes: int = 64 * 1024 * 1024) -> None:
+        self._max_bytes = max_bytes
+        self._items: OrderedDict[tuple[str, ...], bytes] = OrderedDict()
+        self._size = 0
+        self._lock = threading.Lock()
+
+    def get(self, key: tuple[str, ...]) -> bytes | None:
+        with self._lock:
+            data = self._items.get(key)
+            if data is not None:
+                self._items.move_to_end(key)
+            return data
+
+    def put(self, key: tuple[str, ...], data: bytes) -> None:
+        if len(data) > self._max_bytes:
+            return
+        with self._lock:
+            old = self._items.pop(key, None)
+            if old is not None:
+                self._size -= len(old)
+            self._items[key] = data
+            self._size += len(data)
+            while self._size > self._max_bytes:
+                _, evicted = self._items.popitem(last=False)
+                self._size -= len(evicted)
+
+
 class DriveClient:
     def __init__(
         self,
@@ -87,6 +123,7 @@ class DriveClient:
         self._http = http
         self._max_attempts = max_attempts
         self._sleep = sleep
+        self._cache = _ByteCache()
 
     # -- public API --------------------------------------------------------------
 
@@ -149,11 +186,48 @@ class DriveClient:
                 position += 1
         return listing
 
-    def download(self, file_id: str, max_bytes: int) -> bytes:
-        return self._get_bytes(f"/files/{file_id}", {"alt": "media", "supportsAllDrives": "true"}, max_bytes)
+    def download(self, file_id: str, max_bytes: int, version: str | None = None) -> bytes:
+        """Download file content. Pass ``version`` (modifiedTime) to reuse a cached copy."""
+        key = ("media", file_id, version) if version else None
+        cached = self._cache.get(key) if key else None
+        if cached is not None:
+            return cached
+        data = self._get_bytes(f"/files/{file_id}", {"alt": "media", "supportsAllDrives": "true"}, max_bytes)
+        if key:
+            self._cache.put(key, data)
+        return data
 
-    def export(self, file_id: str, mime_type: str, max_bytes: int) -> bytes:
-        return self._get_bytes(f"/files/{file_id}/export", {"mimeType": mime_type}, max_bytes)
+    def export(self, file_id: str, mime_type: str, max_bytes: int, version: str | None = None) -> bytes:
+        key = ("export", file_id, mime_type, version) if version else None
+        cached = self._cache.get(key) if key else None
+        if cached is not None:
+            return cached
+        data = self._get_bytes(f"/files/{file_id}/export", {"mimeType": mime_type}, max_bytes)
+        if key:
+            self._cache.put(key, data)
+        return data
+
+    def probe(self, file_id: str, max_bytes: int = 64 * 1024) -> int:
+        """Read up to ``max_bytes`` of a file's content to prove it is downloadable.
+
+        Returns the number of bytes actually read. Sends a Range header and also stops
+        reading on its own, so it never pulls a whole large file.
+        """
+        resp = self._send(
+            f"/files/{file_id}",
+            {"alt": "media", "supportsAllDrives": "true"},
+            stream=True,
+            headers={"Range": f"bytes=0-{max_bytes - 1}"},
+        )
+        total = 0
+        try:
+            for chunk in resp.iter_bytes():
+                total += len(chunk)
+                if total >= max_bytes:
+                    break
+        finally:
+            resp.close()
+        return min(total, max_bytes)
 
     # -- transport ---------------------------------------------------------------
 
@@ -177,7 +251,9 @@ class DriveClient:
         finally:
             resp.close()
 
-    def _send(self, path: str, params: dict[str, str], stream: bool) -> httpx.Response:
+    def _send(
+        self, path: str, params: dict[str, str], stream: bool, headers: dict[str, str] | None = None
+    ) -> httpx.Response:
         refreshed = False
         attempt = 0
         while True:
@@ -186,7 +262,7 @@ class DriveClient:
                 "GET",
                 f"{API_BASE}{path}",
                 params=params,
-                headers={"Authorization": f"Bearer {self._tokens.access_token()}"},
+                headers={**(headers or {}), "Authorization": f"Bearer {self._tokens.access_token()}"},
             )
             try:
                 resp = self._http.send(request, stream=stream)

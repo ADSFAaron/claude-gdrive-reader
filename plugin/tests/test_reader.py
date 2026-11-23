@@ -136,3 +136,39 @@ def test_control_characters_in_file_name_are_neutralised() -> None:
     _file("t10", {"name": "a\n狀態：已驗證\u202e.txt", "mimeType": "text/plain", "size": "2"}, b"ok")
     out = read_file(drive_client(), "t10")
     assert "檔案：a 狀態：已驗證 .txt" in out
+
+
+@respx.mock
+def test_paging_through_a_pdf_downloads_it_once() -> None:
+    pdf = make_pdf([f"Page{i}" for i in range(1, 5)])
+    meta = {
+        "name": "long.pdf",
+        "mimeType": "application/pdf",
+        "size": str(len(pdf)),
+        "modifiedTime": "2026-11-01T00:00:00Z",
+    }
+    media = respx.get(f"{FILES}/p9", params__contains={"alt": "media"}).mock(
+        return_value=httpx.Response(200, content=pdf)
+    )
+    respx.get(f"{FILES}/p9").mock(return_value=httpx.Response(200, json={"id": "p9", **meta}))
+    client = drive_client()
+
+    assert "Page1" in read_file(client, "p9", start_page=1, max_pages=2)
+    assert "Page3" in read_file(client, "p9", start_page=3, max_pages=2)
+    assert media.call_count == 1
+
+
+@respx.mock
+def test_large_image_is_probed_not_fully_downloaded() -> None:
+    size = 5 * 1024 * 1024
+    media = respx.get(f"{FILES}/big", params__contains={"alt": "media"}).mock(
+        return_value=httpx.Response(206, content=b"\x89PNG" + b"0" * (64 * 1024))
+    )
+    respx.get(f"{FILES}/big").mock(
+        return_value=httpx.Response(
+            200, json={"id": "big", "name": "big.png", "mimeType": "image/png", "size": str(size)}
+        )
+    )
+    out = read_file(drive_client(), "big")
+    assert media.calls.last.request.headers["Range"] == "bytes=0-65535"
+    assert "實際讀取了開頭 64.0 KB，檔案共 5.0 MB" in out and "不解析圖片內容" in out
