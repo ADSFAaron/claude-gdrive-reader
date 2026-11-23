@@ -14,6 +14,7 @@ import secrets
 from dataclasses import dataclass, field
 from typing import Any
 
+from charset_normalizer import from_bytes
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
@@ -87,7 +88,9 @@ def _read(drive: DriveClient, file_id: str, *, start_page: int, max_pages: int) 
     if mime in GOOGLE_EXPORTS:
         export_mime, note = GOOGLE_EXPORTS[mime]
         data = drive.export(meta["id"], export_mime, MAX_DOWNLOAD_BYTES, version=meta.get("modifiedTime"))
-        return ReadOutcome(meta, f"{note}（{human_size(len(data))}）", _decode(data), notes)
+        text, encoding_note = _decode(data)
+        notes.extend([encoding_note] if encoding_note else [])
+        return ReadOutcome(meta, f"{note}（{human_size(len(data))}）", text, notes)
 
     if mime.startswith("application/vnd.google-apps."):
         return ReadOutcome(meta, f"這是 Google 原生格式（{mime}），本工具不支援匯出其內容。", notes=notes)
@@ -106,7 +109,9 @@ def _read(drive: DriveClient, file_id: str, *, start_page: int, max_pages: int) 
 
     if mime.startswith("text/") or mime in TEXT_MIMES:
         data = drive.download(meta["id"], MAX_DOWNLOAD_BYTES, version=meta.get("modifiedTime"))
-        return ReadOutcome(meta, f"已下載並讀取文字（{human_size(len(data))}）", _decode(data), notes)
+        text, encoding_note = _decode(data)
+        notes.extend([encoding_note] if encoding_note else [])
+        return ReadOutcome(meta, f"已下載並讀取文字（{human_size(len(data))}）", text, notes)
 
     if mime.startswith("image/"):
         # Reading the first bytes proves the content is downloadable; the rest would go unused.
@@ -172,15 +177,23 @@ def _read_pdf(meta: dict[str, Any], data: bytes, start_page: int, max_pages: int
     return ReadOutcome(meta, status, "\n\n".join(parts), notes)
 
 
-def _decode(data: bytes) -> str:
+def _decode(data: bytes) -> tuple[str, str | None]:
+    """Decode text bytes. Returns ``(text, note)``; ``note`` says when the encoding was guessed.
+
+    UTF-8 (with or without BOM) and UTF-16 with a BOM are unambiguous. Anything else (Big5,
+    Shift-JIS, cp1252...) is detected statistically, which can be wrong on very short files,
+    so the result says so instead of presenting a possible mis-decoding as fact.
+    """
     if data.startswith((b"\xff\xfe", b"\xfe\xff")):
-        return data.decode("utf-16", errors="replace")
-    for encoding in ("utf-8-sig", "cp950"):  # cp950 = Big5, still common for Traditional Chinese text
-        try:
-            return data.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return data.decode("utf-8", errors="replace")
+        return data.decode("utf-16", errors="replace"), None
+    try:
+        return data.decode("utf-8-sig"), None
+    except UnicodeDecodeError:
+        pass
+    best = from_bytes(data).best()
+    if best is not None:
+        return str(best), f"檔案不是 UTF-8，依內容判斷為 {best.encoding} 編碼；若出現亂碼，代表判斷有誤。"
+    return data.decode("utf-8", errors="replace"), "無法判斷檔案的文字編碼，以 UTF-8 解碼，無法辨識的字元以 � 表示。"
 
 
 def _render(outcome: ReadOutcome, offset: int, max_chars: int) -> str:

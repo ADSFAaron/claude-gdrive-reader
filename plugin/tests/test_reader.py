@@ -83,10 +83,27 @@ def test_text_offset_and_truncation_hint() -> None:
 
 
 @respx.mock
-def test_big5_text_is_decoded() -> None:
-    body = "繁體中文".encode("cp950")
-    _file("t2", {"name": "big5.txt", "mimeType": "text/plain", "size": str(len(body))}, body)
-    assert "繁體中文" in read_file(drive_client(), "t2")
+def test_legacy_encodings_are_detected_and_flagged() -> None:
+    big5 = "這是一份使用 Big5 編碼的會議紀錄，內容包含第三季的營運報告。".encode("cp950")
+    latin = "Café au lait, s'il vous plaît. Une boisson très appréciée.".encode("cp1252")
+    _file("t2", {"name": "big5.txt", "mimeType": "text/plain", "size": str(len(big5))}, big5)
+    _file("t3", {"name": "fr.txt", "mimeType": "text/plain", "size": str(len(latin))}, latin)
+
+    out_big5 = read_file(drive_client(), "t2")
+    out_latin = read_file(drive_client(), "t3")
+
+    assert "第三季的營運報告" in out_big5 and "big5" in out_big5 and "不是 UTF-8" in out_big5
+    # Western text is decoded readably, but cp1250 vs cp1252 cannot always be told apart,
+    # so the result must carry the "guessed encoding" note rather than claim certainty.
+    assert "plaît" in out_latin and "appréciée" in out_latin and "若出現亂碼" in out_latin
+
+
+@respx.mock
+def test_utf8_text_has_no_encoding_note() -> None:
+    body = "一般的 UTF-8 文字".encode()
+    _file("t4", {"name": "u.txt", "mimeType": "text/plain", "size": str(len(body))}, body)
+    out = read_file(drive_client(), "t4")
+    assert "一般的 UTF-8 文字" in out and "不是 UTF-8" not in out
 
 
 @respx.mock

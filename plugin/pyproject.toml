@@ -8,6 +8,7 @@ dependencies = [
     "mcp>=2.3,<3",
     "httpx>=0.28,<1",
     "pypdf>=6,<8",
+    "charset-normalizer>=3.3,<4",
 ]
 
 [project.scripts]
