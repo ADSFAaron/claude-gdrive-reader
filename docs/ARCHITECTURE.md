@@ -71,7 +71,7 @@ sequenceDiagram
 ### 3.3 Token 存放：本機 0600 檔案，而非後端或 OS Keychain
 
 - **位置**：`${CLAUDE_PLUGIN_DATA}/token.json`，即 Claude Code 為每個 plugin 提供的資料目錄。plugin 更新時保留，解除安裝時刪除
-- **寫入**：以原子方式寫入（暫存檔＋`os.replace`），權限 `0600`、目錄 `0700`
+- **寫入**：以原子方式寫入（暫存檔＋`os.replace`），權限 `0600`、目錄 `0700`（目錄若已由 Claude Code 建立，也會主動收緊為 `0700`）
 - **不放後端的理由**：後端一旦保存 refresh token，就成為集中的高價值目標，也需要加密、存取控制與資料保留政策。此外，Google 對在伺服器上儲存或傳輸 restricted scope 資料的 App 要求額外的安全評估
 - **不用 OS Keychain 的理由**：macOS Keychain 第一次存取時會跳出系統對話框，可能讓評審困惑；Linux 無桌面環境時沒有 Secret Service；跨平台處理會增加複雜度。題目也提示「不需要過度設計，但別明碼寫死」
 - **代價**：同一使用者身分下執行的其他程式可以讀取這個檔案。這與 `gcloud`、`gh` 等 CLI 的做法相同，若需要更強保護，可將 `token_store.py` 換成 keyring 實作（介面只有 load／save／delete）
@@ -136,6 +136,7 @@ sequenceDiagram
 - [x] 後端關閉 Workers 持久化 log（callback URL 含一次性授權碼）
 - [x] Token 檔案 0600；log 寫到 stderr（stdout 保留給 MCP 協定），並遮蔽 token 格式字串；loopback 不記錄 request line
 - [x] 只提供讀取工具；`disconnect_google` 會向 Google 撤銷授權
+- [ ] 用 `force=true` 切換帳號時，不會自動撤銷舊帳號的授權：如果重新授權的是同一個帳號，撤銷舊 refresh token 會讓整個授權（包括剛拿到的新 token）一起失效。舊帳號的授權可到 Google 帳號的「第三方存取權」頁面移除
 - [ ] 後端未做 rate limit（無狀態，濫用 `/oauth/token` 需要有效的授權碼與 verifier）。正式環境可加 Cloudflare WAF rate limiting rule
 
 ## 8. 不做的事（範圍控制）

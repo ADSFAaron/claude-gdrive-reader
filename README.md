@@ -39,7 +39,10 @@ Claude：（呼叫 read_file）以下是 PDF 第 1–3 頁的文字…
 
 ### 2. 連接 Google 帳號
 
-對 Claude 說「連接我的 Google 帳號」，或直接要求列出資料夾。Claude 會呼叫 `connect_google` 並開啟瀏覽器：
+對 Claude 說「連接我的 Google 帳號」，或直接要求列出資料夾。Claude 會呼叫 `connect_google` 並開啟瀏覽器。
+
+> **請使用被分享了目標資料夾的 Google 帳號登入。** 若是公司的 Google Workspace 帳號，管理員可能封鎖未經 Google 驗證的 App 存取雲端硬碟，此時會看到「This app is blocked」或 `access_denied`，請洽管理員，或改用另一個也被分享了資料夾的帳號。
+
 
 1. 選擇要使用的 Google 帳號（需要有資料夾的檢視權限）
 2. 同意畫面會顯示「**adsfaaron.workers.dev 要求存取您的 Google 帳戶**」，而不是 App 名稱。這是正常的：Google 只會為通過驗證的 App 顯示名稱，未驗證的 App 改顯示 OAuth 後端的網域
@@ -184,4 +187,5 @@ cd backend && uv run pytest && uv run ruff check .   # 後端：參數驗證、l
 - 非 UTF-8 的文字檔以統計方式判斷編碼，很短的檔案或相近的編碼（如 cp1250／cp1252）可能誤判，結果會註明是推測
 - 單檔上限 25 MB；資料夾每次列出 200 項，超過時用 `offset` 取得下一批（避免超過 Claude Code 的工具輸出上限）
 - 資料夾中的捷徑會列出目標 ID，但不會自動展開（避免繞出原資料夾或形成循環）
+- 不支援 resource key：2021 年 Google 安全性更新前以「知道連結的使用者」分享、而你的帳號沒有被直接加入權限的檔案，Drive API 需要額外的 resource key 才能存取，本工具會回報找不到。被直接加入權限（例如受邀為檢視者）的帳號不受影響
 - 授權使用 restricted scope 且未通過 Google 審核，因此同意畫面顯示網域而非 App 名稱、可能出現未驗證警告，並受 100 位使用者上限限制
