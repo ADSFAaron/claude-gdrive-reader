@@ -29,7 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     ls = sub.add_parser("ls", help="list a folder")
     ls.add_argument("folder")
     ls.add_argument("--flat", action="store_true", help="do not descend into subfolders")
-    ls.add_argument("--max-items", type=int, default=500)
+    ls.add_argument("--max-items", type=int, default=200)
+    ls.add_argument("--offset", type=int, default=0)
     cat = sub.add_parser("cat", help="read a file")
     cat.add_argument("file")
     cat.add_argument("--offset", type=int, default=0)
@@ -47,7 +48,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "logout":
             print(tools.disconnect(svc))
         elif args.command == "ls":
-            print(tools.list_folder(svc, args.folder, recursive=not args.flat, max_items=args.max_items))
+            print(
+                tools.list_folder(
+                    svc, args.folder, recursive=not args.flat, max_items=args.max_items, offset=args.offset
+                )
+            )
         elif args.command == "cat":
             print(
                 tools.read_file(

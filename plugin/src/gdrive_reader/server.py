@@ -91,19 +91,20 @@ def create_server(factory: Callable[[], Services] = build_services) -> MCPServer
     def list_folder(
         folder: Annotated[str, Field(description="Google Drive folder share link, URL, or folder ID.")],
         recursive: Annotated[bool, Field(description="Also list files inside subfolders.")] = True,
-        max_items: Annotated[int, Field(ge=1, le=5000, description="Maximum number of entries to return.")] = 500,
+        max_items: Annotated[int, Field(ge=1, le=1000, description="Maximum number of entries to return.")] = 200,
+        offset: Annotated[int, Field(ge=0, description="Skip this many entries (to fetch the next page).")] = 0,
     ) -> str:
         """List the files in a Google Drive folder (and its subfolders), with each file's type, size,
-        path and ID. Use the IDs with read_file."""
+        path and ID. Use the IDs with read_file. Large folders are paged: pass the offset shown in the result."""
         with _user_errors():
-            return tools.list_folder(svc(), folder, recursive=recursive, max_items=max_items)
+            return tools.list_folder(svc(), folder, recursive=recursive, max_items=max_items, offset=offset)
 
     @server.tool(title="Read Google Drive file", annotations=_READ_ONLY, structured_output=False)
     def read_file(
         file: Annotated[str, Field(description="File ID (from list_folder), share link, or URL.")],
         offset: Annotated[int, Field(ge=0, description="Character offset to continue a long text.")] = 0,
         max_chars: Annotated[
-            int, Field(ge=500, le=50_000, description="Maximum characters of content to return.")
+            int, Field(ge=500, le=20_000, description="Maximum characters of content to return.")
         ] = 10_000,
         start_page: Annotated[int, Field(ge=1, description="PDF only: first page to read (1-based).")] = 1,
         max_pages: Annotated[int, Field(ge=1, le=500, description="PDF only: number of pages to read.")] = 50,

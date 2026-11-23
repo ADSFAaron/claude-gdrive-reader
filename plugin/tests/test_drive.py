@@ -129,3 +129,28 @@ def test_error_mapping(status: int, reason: str, error_type: type, snippet: str)
     with pytest.raises(error_type) as info:
         drive_client().get_metadata("x")
     assert snippet in str(info.value)
+
+
+@respx.mock
+def test_offset_pages_through_the_traversal_in_stable_order() -> None:
+    _meta_route(respx.mock, "root1", {"name": "Test", "mimeType": FOLDER_MIME})
+    root_children = [
+        {"id": "sub1", "name": "Sub", "mimeType": FOLDER_MIME},
+        {"id": "a", "name": "a.txt", "mimeType": "text/plain"},
+        {"id": "b", "name": "b.txt", "mimeType": "text/plain"},
+    ]
+    respx.get(FILES, params__contains={"q": "'root1' in parents and trashed = false"}).mock(
+        return_value=httpx.Response(200, json={"files": root_children})
+    )
+    respx.get(FILES, params__contains={"q": "'sub1' in parents and trashed = false"}).mock(
+        return_value=httpx.Response(200, json={"files": [{"id": "c", "name": "c.txt", "mimeType": "text/plain"}]})
+    )
+    client = drive_client()
+
+    first = client.list_folder("root1", max_items=2)
+    second = client.list_folder("root1", max_items=2, offset=2)
+
+    assert [e.path for e in first.entries] == ["Sub/", "a.txt"] and first.truncated
+    assert [e.path for e in second.entries] == ["b.txt", "Sub/c.txt"] and not second.truncated
+    assert "offset=2" in format_listing(first, recursive=True)
+    assert "第 3–4 項" in format_listing(second, recursive=True)

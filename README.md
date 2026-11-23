@@ -181,6 +181,6 @@ cd backend && uv run pytest && uv run ruff check .   # 後端：參數驗證、l
 
 - 圖片只下載並回報資訊，不做 OCR 或影像辨識；掃描版 PDF 同理
 - 不支援 docx／xlsx 等 Office 格式的內容解析；Google 試算表只匯出第一個工作表
-- 單檔上限 25 MB；資料夾列出預設上限 500 項（可調整 `max_items`）
+- 單檔上限 25 MB；資料夾每次列出 200 項，超過時用 `offset` 取得下一批（避免超過 Claude Code 的工具輸出上限）
 - 資料夾中的捷徑會列出目標 ID，但不會自動展開（避免繞出原資料夾或形成循環）
 - 授權使用 restricted scope 且未通過 Google 審核，因此同意畫面顯示網域而非 App 名稱、可能出現未驗證警告，並受 100 位使用者上限限制

@@ -84,9 +84,9 @@ def disconnect(svc: Services) -> str:
     )
 
 
-def list_folder(svc: Services, folder: str, recursive: bool = True, max_items: int = 500) -> str:
+def list_folder(svc: Services, folder: str, recursive: bool = True, max_items: int = 200, offset: int = 0) -> str:
     folder_id = parse_drive_id(folder)
-    listing = svc.drive.list_folder(folder_id, recursive=recursive, max_items=max_items)
+    listing = svc.drive.list_folder(folder_id, recursive=recursive, max_items=max_items, offset=offset)
     return format_listing(listing, recursive)
 
 

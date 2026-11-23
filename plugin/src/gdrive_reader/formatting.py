@@ -39,13 +39,20 @@ def format_listing(listing: FolderListing, recursive: bool) -> str:
     folder = listing.folder
     files = [e for e in listing.entries if not e.is_folder]
     folders = [e for e in listing.entries if e.is_folder]
+    first, last = listing.offset + 1, listing.offset + len(listing.entries)
+    scope = f"（已遞迴掃描 {listing.folders_scanned} 個資料夾）" if recursive else "（只列出第一層）"
+    paged = listing.offset > 0 or listing.truncated
+    count = f"第 {first}–{last} 項" if paged else f"共 {len(listing.entries)} 個項目"
     lines = [
         f"資料夾：{folder.get('name')}（ID：{folder.get('id')}）",
-        f"共 {len(listing.entries)} 個項目：{len(files)} 個檔案、{len(folders)} 個子資料夾"
-        + (f"（已遞迴掃描 {listing.folders_scanned} 個資料夾）" if recursive else "（只列出第一層）"),
+        f"{count}：{len(files)} 個檔案、{len(folders)} 個子資料夾{scope}",
     ]
     if not listing.entries:
-        lines.append("這個資料夾是空的（或目前帳號看不到其中任何項目）。")
+        lines.append(
+            "這個資料夾是空的（或目前帳號看不到其中任何項目）。"
+            if listing.offset == 0
+            else f"offset={listing.offset} 之後沒有更多項目了。"
+        )
     lines.append("")
     for entry in listing.entries:
         detail = type_label(entry.mime_type)
@@ -55,7 +62,7 @@ def format_listing(listing: FolderListing, recursive: bool) -> str:
             detail += f"，指向 ID {entry.shortcut_target}（未展開）"
         lines.append(f"- {entry.path}　[{detail}]　id: {entry.id}")
     if listing.truncated:
-        lines.append(f"\n（結果已截斷：只顯示前 {len(listing.entries)} 個項目。可提高 max_items 取得更多。）")
+        lines.append(f"\n（還有更多項目。可用 offset={last} 取得下一批。）")
     if listing.depth_limited:
         lines.append("（部分子資料夾超過深度上限，未繼續展開。）")
     lines.append("\n要讀取內容時，請用 read_file 並傳入上面的 id。")

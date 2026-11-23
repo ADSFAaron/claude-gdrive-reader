@@ -69,6 +69,7 @@ class DriveEntry:
 class FolderListing:
     folder: dict[str, Any]
     entries: list[DriveEntry] = field(default_factory=list)
+    offset: int = 0
     folders_scanned: int = 0
     truncated: bool = False
     depth_limited: bool = False
@@ -113,8 +114,10 @@ class DriveClient:
             params = {**params, "pageToken": token}
 
     def list_folder(
-        self, folder_id: str, recursive: bool = True, max_items: int = 500, max_depth: int = 20
+        self, folder_id: str, recursive: bool = True, max_items: int = 200, max_depth: int = 20, offset: int = 0
     ) -> FolderListing:
+        """Breadth-first listing. ``offset``/``max_items`` page through the traversal order,
+        which is stable because children are sorted (folders first, then by name)."""
         folder = self.get_metadata(folder_id)
         if folder.get("mimeType") == SHORTCUT_MIME:
             target = folder.get("shortcutDetails") or {}
@@ -123,24 +126,27 @@ class DriveClient:
         if folder.get("mimeType") != FOLDER_MIME:
             raise InvalidReference(f"「{folder.get('name', folder_id)}」不是資料夾。要讀取檔案內容請改用 read_file。")
 
-        listing = FolderListing(folder=folder)
+        listing = FolderListing(folder=folder, offset=offset)
         queue: deque[tuple[str, str, int]] = deque([(folder["id"], "", 0)])
         visited = {folder["id"]}
+        position = 0
         while queue:
             current_id, prefix, depth = queue.popleft()
             listing.folders_scanned += 1
             for item in self.iter_children(current_id):
-                if len(listing.entries) >= max_items:
+                if position >= offset and len(listing.entries) >= max_items:
                     listing.truncated = True
                     return listing
                 entry = _to_entry(item, prefix, depth)
-                listing.entries.append(entry)
                 if entry.is_folder and recursive and entry.id not in visited:
                     if depth + 1 >= max_depth:
                         listing.depth_limited = True
-                        continue
-                    visited.add(entry.id)
-                    queue.append((entry.id, entry.path, depth + 1))
+                    else:
+                        visited.add(entry.id)
+                        queue.append((entry.id, entry.path, depth + 1))
+                if position >= offset:
+                    listing.entries.append(entry)
+                position += 1
         return listing
 
     def download(self, file_id: str, max_bytes: int) -> bytes:
