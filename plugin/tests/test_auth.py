@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import socket
 import threading
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import httpx
 import pytest
@@ -12,7 +13,7 @@ import respx
 
 from conftest import BACKEND, DRIVE_READONLY, make_token
 from gdrive_reader import tools
-from gdrive_reader.errors import NotAuthenticated, ReauthRequired
+from gdrive_reader.errors import BrokerError, NotAuthenticated, ReauthRequired
 from gdrive_reader.oauth import LoginFlow
 from gdrive_reader.services import Services
 from gdrive_reader.token_store import TokenStore
@@ -192,3 +193,61 @@ def test_unexpected_callback_error_still_answers_the_browser(tmp_path, mock_http
     port = flow.state.split(".")[0]
     status, _ = _hit_loopback(f"http://127.0.0.1:{port}/callback?code=c&state={flow.state}")
     assert status == 400 and flow.finished and flow.result.status == "error"
+
+
+def test_idle_connection_does_not_block_the_callback(tmp_path, mock_http: respx.MockRouter) -> None:
+    """Browsers open speculative connections that never send a request."""
+    mock_http.route(host="127.0.0.1").pass_through()
+    flow = LoginFlow(_QuickBroker(), TokenStore(tmp_path / "token.json"))  # type: ignore[arg-type]
+    port = int(flow.state.split(".")[0])
+
+    with socket.create_connection(("127.0.0.1", port)):
+        time.sleep(0.2)  # let the server accept the idle connection first
+        status, page = _hit_loopback(f"http://127.0.0.1:{port}/callback?code=c&state={flow.state}")
+
+    assert status == 200 and "授權完成" in page
+    assert flow.result.status == "success"
+
+
+@pytest.mark.parametrize("bad_state", ["wrong", "é", "狀態", ""])
+def test_wrong_state_never_ends_the_flow(tmp_path, mock_http: respx.MockRouter, bad_state: str) -> None:
+    mock_http.route(host="127.0.0.1").pass_through()
+    flow = LoginFlow(_QuickBroker(), TokenStore(tmp_path / "token.json"))  # type: ignore[arg-type]
+    port = flow.state.split(".")[0]
+
+    status, page = _hit_loopback(f"http://127.0.0.1:{port}/callback?code=c&state={quote(bad_state)}")
+    assert status == 400 and "state 參數不符" in page
+    assert not flow.finished
+
+    status, _ = _hit_loopback(f"http://127.0.0.1:{port}/callback?code=c&state={flow.state}")
+    assert status == 200 and flow.result.status == "success"
+
+
+class _SingleUseBroker(_SlowBroker):
+    """Like Google: the code works once. Reuse fails faster than the first exchange succeeds."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def exchange_code(self, code: str, code_verifier: str) -> dict:
+        self.calls += 1
+        if self.calls > 1:
+            raise BrokerError("invalid_grant", code="invalid_grant")
+        return super().exchange_code(code, code_verifier)
+
+
+def test_duplicate_callback_exchanges_the_code_once(tmp_path, mock_http: respx.MockRouter) -> None:
+    mock_http.route(host="127.0.0.1").pass_through()
+    broker = _SingleUseBroker()
+    flow = LoginFlow(broker, TokenStore(tmp_path / "token.json"))  # type: ignore[arg-type]
+    url = f"http://127.0.0.1:{flow.state.split('.')[0]}/callback?code=c&state={flow.state}"
+    pages: list[tuple[int, str]] = []
+    browsers = [threading.Thread(target=lambda: pages.append(_hit_loopback(url))) for _ in range(2)]
+    for browser in browsers:
+        browser.start()
+    for browser in browsers:
+        browser.join()
+
+    assert broker.calls == 1
+    assert flow.result.status == "success"
+    assert sorted(status for status, _ in pages) == [200, 400]

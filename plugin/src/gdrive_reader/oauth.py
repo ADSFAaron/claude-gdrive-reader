@@ -26,7 +26,7 @@ import secrets
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Literal
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -101,6 +101,7 @@ _PAGE = """<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 
 class _CallbackHandler(BaseHTTPRequestHandler):
     server: _LoopbackServer
+    timeout = 30  # seconds; drops connections that never send a request
 
     def do_GET(self) -> None:  # noqa: N802 (http.server naming)
         parsed = urlparse(self.path)
@@ -123,7 +124,10 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         return
 
 
-class _LoopbackServer(HTTPServer):
+class _LoopbackServer(ThreadingHTTPServer):
+    # One thread per connection: browsers open speculative connections that stay idle, and a
+    # single-threaded server would wait on those instead of answering the real callback.
+
     def __init__(self, on_callback: Callable[[dict[str, str]], tuple[bool, str, str]]) -> None:
         super().__init__(("127.0.0.1", 0), _CallbackHandler)
         self.on_callback = on_callback
@@ -153,6 +157,7 @@ class LoginFlow:
         self.state = f"{self._server.server_address[1]}.{secrets.token_urlsafe(24)}"
         self.authorize_url = broker.authorize_url(challenge, self.state)
         self._lock = threading.Lock()
+        self._callback_lock = threading.Lock()
         self._done = threading.Event()
         self.result = LoginResult("pending")
         threading.Thread(target=self._server.serve_forever, name="oauth-loopback", daemon=True).start()
@@ -213,11 +218,21 @@ class LoginFlow:
     def _process_callback(self, params: dict[str, str]) -> tuple[bool, str, str]:
         if self._done.is_set():
             return False, "這次授權已經處理過", "請回到 Claude Code。如需重新授權，請再呼叫 connect_google。"
-        if not hmac.compare_digest(params.get("state", ""), self.state):
+        # Compare bytes: compare_digest raises TypeError for non-ASCII str, which would end the flow.
+        if not hmac.compare_digest(params.get("state", "").encode("utf-8"), self.state.encode("utf-8")):
             # Not ours (stale tab or forged request): ignore without ending the flow.
             log.warning("Ignored loopback callback with mismatched state.")
             return False, "授權驗證失敗", "state 參數不符，已拒絕這次回呼。請回到 Claude Code 重新授權。"
 
+        # A browser may send the same callback twice. The code is single-use, so a concurrent
+        # second exchange would fail and could end the flow before the first one succeeds.
+        with self._callback_lock:
+            if self._done.is_set():
+                return False, "這次授權已經處理過", "請回到 Claude Code。如需重新授權，請再呼叫 connect_google。"
+            return self._complete(params)
+
+    def _complete(self, params: dict[str, str]) -> tuple[bool, str, str]:
+        """Finish the flow from a callback whose ``state`` has been verified."""
         if "error" in params:
             reason = params["error"]
             detail = "你取消了授權。" if reason == "access_denied" else f"Google 回傳錯誤：{reason}。"
