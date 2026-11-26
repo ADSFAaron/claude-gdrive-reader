@@ -141,3 +141,16 @@ def test_cloudflare_env_binding_is_preferred(monkeypatch: pytest.MonkeyPatch) ->
     query = parse_qs(urlparse(resp.headers["location"]).query)
     assert query["client_id"] == ["from-env"]
     assert query["redirect_uri"] == ["https://pub.example/oauth/callback"]
+
+
+def test_home_page_describes_the_app_and_links_the_privacy_policy(client: TestClient) -> None:
+    resp = client.get("/")
+    assert resp.status_code == 200 and resp.headers["content-type"].startswith("text/html")
+    assert "Google Drive" in resp.text and 'href="/privacy"' in resp.text
+
+
+def test_privacy_policy_covers_google_user_data(client: TestClient) -> None:
+    resp = client.get("/privacy")
+    assert resp.status_code == 200 and resp.headers["content-type"].startswith("text/html")
+    assert "drive.readonly" in resp.text and "Limited Use" in resp.text
+    assert "myaccount.google.com/permissions" in resp.text

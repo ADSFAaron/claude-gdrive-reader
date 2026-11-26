@@ -6,7 +6,9 @@ of shipping it inside the plugin, means anyone who installs the plugin can sign
 in without ever seeing it.
 
 What it does, and nothing more:
-  GET  /oauth/start     build Google's consent URL (adds client_id, scope, redirect_uri)
+  GET  /               home page (required by Google to publish the OAuth app)
+  GET  /privacy        privacy policy (same)
+  GET  /oauth/start    build Google's consent URL (adds client_id, scope, redirect_uri)
   GET  /oauth/callback  receive Google's redirect and relay code+state to the user's
                         local listener at http://127.0.0.1:<port>/callback
   POST /oauth/token     exchange code + PKCE verifier for tokens (adds client_secret)
@@ -87,6 +89,90 @@ def _page(status: int, title: str, body: str) -> HTMLResponse:
     return HTMLResponse(html, status_code=status, headers=NO_STORE)
 
 
+REPO_URL = "https://github.com/ADSFAaron/claude-gdrive-reader"
+POLICY_DATE = "2026-11-26"
+
+_DOC_STYLE = (
+    "body{font-family:system-ui,-apple-system,'PingFang TC','Noto Sans TC',sans-serif;max-width:42rem;"
+    "margin:3rem auto;padding:0 1rem;line-height:1.7;color:#222;background:#fff}"
+    "h1{font-size:1.6rem}h2{font-size:1.15rem;margin-top:2rem}a{color:#1a5fb4}"
+    "footer{margin-top:3rem;font-size:.9rem;color:#666}"
+)
+
+HOME_BODY = f"""
+<h1>Google Drive Reader</h1>
+<p>Google Drive Reader 是一個開源的 Claude Code plugin。使用者以 Google 帳號授權後，可以在 Claude Code 中用自然語言
+列出 Google Drive 資料夾（含子資料夾）並讀取檔案內容。權限為唯讀，只能存取該帳號本來就看得到的檔案。</p>
+<p>Google Drive Reader is an open-source plugin for Claude Code. After signing in with Google, users can ask
+Claude Code to list a Google Drive folder, including its subfolders, and read the files in it. Access is
+read-only and limited to files the signed-in account can already see.</p>
+<p>這個網址是它的 OAuth 後端，負責 Google 登入與 token 交換，本身不保存任何 token 或檔案。<br>
+This site hosts the plugin's OAuth backend. It handles Google sign-in and token exchange and stores no tokens
+or files.</p>
+<ul>
+<li><a href="{REPO_URL}">原始碼與安裝說明 / Source code and setup</a></li>
+<li><a href="/privacy">隱私權政策 / Privacy policy</a></li>
+</ul>
+"""
+
+PRIVACY_BODY = f"""
+<h1>隱私權政策 / Privacy Policy</h1>
+<p>生效日期 / Effective date：{POLICY_DATE}</p>
+
+<h2>存取哪些資料</h2>
+<p>本 App 只申請 Google Drive 唯讀權限（<code>drive.readonly</code>）。只有在使用者於 Claude Code 中要求時，
+才會讀取資料夾清單、檔案中繼資料（名稱、類型、大小、修改時間）與檔案內容。本 App 不會修改、刪除或分享任何檔案。</p>
+
+<h2>資料如何處理</h2>
+<p>檔案的讀取與文字抽取都在使用者自己的電腦上，由 plugin 執行。讀取結果會回傳給 Claude Code，成為對話的一部分；
+這部分資料由 Anthropic 依使用者與 Anthropic 之間的條款處理，不在本 App 控制範圍內。</p>
+<p>這個網址上的 OAuth 後端只處理登入：在授權與更新 token 時轉送授權碼與 token，不保存 token、不讀取 Drive 檔案，
+也沒有開啟請求記錄。後端託管於 Cloudflare Workers，Cloudflare 作為託管服務商可能處理連線的技術資料（例如 IP 位址）。</p>
+
+<h2>資料儲存位置</h2>
+<p>Google 的 access token 與 refresh token 只存在使用者電腦上的檔案中，權限限制為僅本人可讀。
+中斷連線或移除 plugin 時，這個檔案會被刪除。</p>
+
+<h2>分享</h2>
+<p>本 App 不出售、不出租 Google 使用者資料，也不用於廣告或訓練 AI 模型，除了上述處理之外不與任何第三方分享。
+本 App 對 Google API 所取得資訊的使用，遵守
+<a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>，
+包括其中的 Limited Use 規定。</p>
+
+<h2>撤銷授權</h2>
+<p>在 Claude Code 中呼叫 <code>disconnect_google</code>，或到
+<a href="https://myaccount.google.com/permissions">Google 帳號的第三方存取權頁面</a> 移除本 App。</p>
+
+<h2>聯絡</h2>
+<p>有任何問題，請到 <a href="{REPO_URL}/issues">GitHub Issues</a> 回報。</p>
+
+<h2>English summary</h2>
+<p>The app requests read-only Google Drive access and reads folders, file metadata and file content only when
+the user asks for it in Claude Code. Files are read and processed on the user's own computer, and the results are
+returned to Claude Code as part of the conversation, where Anthropic handles them under the user's own terms with
+Anthropic. The OAuth backend on this site only relays authorization codes and tokens during sign-in and refresh;
+it stores no tokens, reads no Drive files and keeps no request logs. Tokens are stored only in a file on the
+user's computer that only the user can read, and are deleted on disconnect or uninstall. Google user data is not
+sold, used for advertising or AI training, or shared with third parties beyond the processing described here.
+Use of information received from Google APIs adheres to the
+<a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data
+Policy</a>, including the Limited Use requirements. Revoke access with <code>disconnect_google</code> or at
+<a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>. Questions:
+<a href="{REPO_URL}/issues">GitHub Issues</a>.</p>
+"""
+
+
+def _document(title: str, body: str) -> HTMLResponse:
+    html = (
+        f'<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">'
+        f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>'
+        f"<style>{_DOC_STYLE}</style></head><body>{body}"
+        f'<footer><a href="/">Google Drive Reader</a> · <a href="/privacy">Privacy</a> · '
+        f'<a href="{REPO_URL}">GitHub</a></footer></body></html>'
+    )
+    return HTMLResponse(html, headers={"Cache-Control": "public, max-age=300"})
+
+
 def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     app = FastAPI(title="gdrive-reader OAuth broker", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -113,12 +199,12 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         return (client_id, client_secret) if client_id and client_secret else None
 
     @app.get("/")
-    async def index() -> dict[str, Any]:
-        return {
-            "service": "gdrive-reader OAuth broker",
-            "endpoints": ["/oauth/start", "/oauth/callback", "/oauth/token", "/oauth/refresh", "/healthz"],
-            "stores_tokens": False,
-        }
+    async def home() -> HTMLResponse:
+        return _document("Google Drive Reader", HOME_BODY)
+
+    @app.get("/privacy")
+    async def privacy() -> HTMLResponse:
+        return _document("隱私權政策 · Google Drive Reader", PRIVACY_BODY)
 
     @app.get("/healthz")
     async def healthz(request: Request) -> dict[str, bool]:

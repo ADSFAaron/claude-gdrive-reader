@@ -2,15 +2,29 @@
 
 讓 Claude Code 透過 OAuth 連接你的 Google 帳號，以自然語言**列出** Google Drive 資料夾（含子資料夾）並**讀取**檔案內容。權限為唯讀，只能看到你的 Google 帳號本來就有權限看到的檔案。
 
-```
+```text
 你：列出這個資料夾的檔案 https://drive.google.com/drive/folders/<資料夾ID>
 Claude：（呼叫 list_folder）資料夾裡有 2 個檔案：report.pdf（PDF，1.2 MB）、photo.png（圖片，340 KB）…
 你：讀出 report.pdf 的內容
 Claude：（呼叫 read_file）以下是 PDF 第 1–3 頁的文字…
 ```
 
-- **架構與技術取捨**：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- **元件**：`plugin/` 是 Claude Code plugin（Python MCP server，本機執行）；`backend/` 是 OAuth 後端（FastAPI，部署在 Cloudflare Workers）
+架構圖、技術選擇與取捨：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+```text
+.
+├── .claude-plugin/marketplace.json   # plugin marketplace 定義
+├── plugin/                           # Claude Code plugin＋MCP server（Python，本機執行）
+│   ├── .claude-plugin/plugin.json
+│   ├── .mcp.json                     # Claude Code 啟動 MCP server 的設定
+│   ├── src/gdrive_reader/            # server.py（工具）、oauth.py、auth.py、drive.py、reader.py …
+│   └── tests/
+├── backend/                          # OAuth 後端（FastAPI，部署在 Cloudflare Workers）
+│   ├── src/worker.py
+│   ├── wrangler.jsonc
+│   └── tests/
+└── docs/ARCHITECTURE.md
+```
 
 ---
 
@@ -29,7 +43,7 @@ Claude：（呼叫 read_file）以下是 PDF 第 1–3 頁的文字…
 
 在 Claude Code 中執行：
 
-```
+```text
 /plugin marketplace add ADSFAaron/claude-gdrive-reader
 /plugin install gdrive-reader@gdrive-reader-marketplace
 /reload-plugins
@@ -43,16 +57,15 @@ Claude：（呼叫 read_file）以下是 PDF 第 1–3 頁的文字…
 
 > **請使用被分享了目標資料夾的 Google 帳號登入。** 若是公司的 Google Workspace 帳號，管理員可能封鎖未經 Google 驗證的 App 存取雲端硬碟，此時會看到「This app is blocked」或 `access_denied`，請洽管理員，或改用另一個也被分享了資料夾的帳號。
 
-
 1. 選擇要使用的 Google 帳號（需要有資料夾的檢視權限）
 2. 同意畫面會顯示「**adsfaaron.workers.dev 要求存取您的 Google 帳戶**」，而不是 App 名稱。這是正常的：Google 只會為通過驗證的 App 顯示名稱，未驗證的 App 改顯示 OAuth 後端的網域
-3. 若出現「**Google 尚未驗證這個應用程式**」，點「**進階**」→「**前往…（不安全）**」。原因是本 App 使用 restricted scope，而且未送 Google 審核（見 [ARCHITECTURE.md § 4](docs/ARCHITECTURE.md#4-oauth-scope為什麼是-drivereadonly)）
+3. 若出現「**Google 尚未驗證這個應用程式**」，點「**進階**」→「**前往…（不安全）**」。原因是本 App 使用 restricted scope，而且未送 Google 審核（見 [ARCHITECTURE.md](docs/ARCHITECTURE.md) 4.4 節）
 4. 確認權限是「**查看及下載您的所有 Google 雲端硬碟檔案**」（唯讀），按「繼續」
 5. 頁面顯示「授權完成」後，關閉分頁回到 Claude Code
 
 ### 3. 列出與讀取
 
-```
+```text
 列出這個資料夾的檔案：<貼上 Google Drive 資料夾的分享連結>
 讀出裡面那個 PDF 的內容
 那張圖片的資訊是什麼？
@@ -76,26 +89,64 @@ Claude：（呼叫 read_file）以下是 PDF 第 1–3 頁的文字…
 | `list_folder` | 遞迴列出資料夾（接受分享連結、網址或 ID） |
 | `read_file` | 讀取單一檔案（接受 `list_folder` 回傳的 ID 或連結） |
 
+### 5. 更新與移除
+
+在終端機執行：
+
+```bash
+# 更新到最新版本
+claude plugin marketplace update gdrive-reader-marketplace
+claude plugin update gdrive-reader@gdrive-reader-marketplace
+
+# 移除（建議先在 Claude Code 中呼叫 disconnect_google，向 Google 撤銷授權）
+claude plugin uninstall gdrive-reader@gdrive-reader-marketplace
+claude plugin marketplace remove gdrive-reader-marketplace
+```
+
+移除 plugin 時，Claude Code 會一併刪除存放 token 的資料目錄。
+
 ---
 
-## 二、授權流程與 Token 存放
+## 二、架構與授權流程
 
-```
-Claude Code ─ MCP(stdio) ─► 本機 MCP server ──► 瀏覽器 ──► 後端 /oauth/start ──► Google 同意畫面
-                                  ▲                                                   │
-                                  │ code（經 127.0.0.1 loopback）◄── 後端 /oauth/callback ◄┘
-                                  │
-                                  └─► 後端 /oauth/token（加上 client secret）──► Google token endpoint
-本機 MCP server ──（access token）──► Google Drive API（直接呼叫，不經後端）
+```mermaid
+sequenceDiagram
+    participant M as MCP server（本機）
+    participant B as 瀏覽器
+    participant W as OAuth 後端（Worker）
+    participant G as Google
+    M->>B: 開啟授權頁（PKCE challenge、state）
+    B->>W: /oauth/start
+    W->>B: 轉到 Google 同意畫面
+    B->>G: 登入並同意 drive.readonly
+    G->>B: 帶著 code 轉回 /oauth/callback
+    B->>W: /oauth/callback
+    W->>B: 轉回 http://127.0.0.1:埠/callback
+    B->>M: code
+    M->>W: /oauth/token（code＋PKCE verifier）
+    W->>G: 加上 client secret 換 token
+    G->>W: access token、refresh token
+    W->>M: token
+    M->>M: 存入 token.json（0600）
 ```
 
-- **OAuth flow**：Authorization Code + PKCE（S256）。`state` 帶有一次性亂數，由本機驗證。授權碼即使經過瀏覽器也無法單獨使用，因為 PKCE verifier 只存在本機程序中
-- **Client secret**：只存在 Cloudflare Worker 的 secret 中，不在 repo、不在 plugin、不經過使用者電腦
-- **Token 存放**：refresh token 與 access token 存在本機的 `~/.claude/plugins/data/gdrive-reader-gdrive-reader-marketplace/token.json`
+授權完成後，MCP server 直接用 access token 呼叫 Google Drive API，檔案內容不經過後端。
+
+技術選擇摘要（完整理由見 [ARCHITECTURE.md](docs/ARCHITECTURE.md)）：
+
+- **為什麼要後端**：Google Web application client 換 token 需要 client secret，secret 不能隨 plugin 發到使用者電腦，所以放在 Cloudflare Worker。後端只負責轉送和換 token，不存任何資料
+- **OAuth flow**：Authorization Code＋PKCE（S256）。PKCE verifier 只存在本機程序中，授權碼經過瀏覽器也無法單獨使用；`state` 由本機驗證
+- **Token 存本機**：後端不保管使用者憑證，可以完全無狀態
+- **Scope 用 `drive.readonly`**：要列出被分享資料夾的子項目並讀取內容，`drive.file` 做不到
+
+### Token 存放
+
+- **位置**：refresh token 與 access token 存在本機的 `~/.claude/plugins/data/gdrive-reader-gdrive-reader-marketplace/token.json`
   - 檔案權限 `0600`、目錄權限 `0700`，以原子方式寫入
   - 不會出現在工具輸出、對話或 log 中（log 會遮蔽 token 格式的字串）
   - 解除安裝 plugin 時，Claude Code 會刪除這個目錄
 - **後端不存任何 token**，也不會碰到 Drive 檔案內容
+- **檔案內容**：在本機讀取，回傳給 Claude Code 後會成為對話的一部分
 - **撤銷授權**：呼叫 `disconnect_google`，或到 [Google 帳號權限頁](https://myaccount.google.com/permissions) 移除；之後會要求重新授權
 - **Token 過期**：access token 到期前一分鐘會透過後端自動更新。refresh token 失效（被撤銷、或 App 處於 Testing 模式超過 7 天）時，會清除本機 token 並提示重新授權
 
@@ -109,14 +160,18 @@ Claude Code ─ MCP(stdio) ─► 本機 MCP server ──► 瀏覽器 ──�
 
 1. 到 [Google Cloud Console](https://console.cloud.google.com/) 建立專案 → 「API 和服務 → 程式庫」→ 啟用 **Google Drive API**
 2. **Google Auth Platform → 開始使用**：填寫 App 名稱（不可含 Google 商標開頭，例如 `Folder Reader for Google Drive`）、支援 email，Audience 選 **External**
-3. **Data Access** → 新增 scope `https://www.googleapis.com/auth/drive.readonly`
-4. **Audience**：
-   - 維持 **Testing**：只有加入「測試使用者」的帳號能授權，且授權在 7 天後失效
-   - 或按 **Publish app** 切到 **In production**：任何帳號都能授權，但會看到「未驗證」警告，且上限 100 位使用者
-5. **Clients → Create client** → 類型 **Web application**，Authorized redirect URIs 填：
+3. **Branding**：後端內建首頁與隱私權政策頁，B 部署完成後即可開啟。沒填這兩個網址，第 5 步的 Publish app 按鈕會反灰
+   - Application home page：`https://gdrive-reader-auth.<你的子網域>.workers.dev/`
+   - Application privacy policy link：`https://gdrive-reader-auth.<你的子網域>.workers.dev/privacy`
+   - Authorized domains：`<你的子網域>.workers.dev`
+   - 不要上傳 App logo：上傳後必須先通過 Google 的品牌審核
+4. **Data Access** → 新增 scope `https://www.googleapis.com/auth/drive.readonly`
+5. **Audience** → 按 **Publish app** 切到 **In production**：任何帳號都能授權，但會看到「未驗證」警告，且上限 100 位使用者。不需要送 Google 審核
+   - 若維持 **Testing**：只有加入「測試使用者」的帳號能授權，且授權在 7 天後失效
+6. **Clients → Create client** → 類型 **Web application**，Authorized redirect URIs 填：
    - `https://gdrive-reader-auth.<你的子網域>.workers.dev/oauth/callback`
    - `http://localhost:8787/oauth/callback`（本機開發用，可省略）
-6. 建立後**立即下載 client secret**（Google 只顯示一次），存放在 repo 以外的位置
+7. 建立後**立即下載 client secret**（Google 只顯示一次），存放在 repo 以外的位置
 
 ### B. 部署後端到 Cloudflare Workers
 
@@ -130,6 +185,8 @@ uv run pywrangler secret put GOOGLE_CLIENT_SECRET
 uv run pywrangler deploy
 curl https://gdrive-reader-auth.<你的子網域>.workers.dev/healthz   # 應回傳 {"ok":true,"configured":true}
 ```
+
+首頁與隱私權政策中的 GitHub 連結寫在 `backend/src/worker.py` 的 `REPO_URL`，部署前請改成你的 repo。
 
 ### C. 讓 plugin 指向你的後端
 
@@ -176,6 +233,7 @@ cd backend && uv run pytest && uv run ruff check .   # 後端：參數驗證、l
 | 授權後瀏覽器無法開啟 `127.0.0.1` 頁面 | 授權流程已逾時（10 分鐘），或 Claude Code 在另一台機器（SSH）。請在同一台電腦重新呼叫 `connect_google` |
 | 「找不到這個檔案或資料夾…」 | 連結錯誤，或登入的帳號沒有被分享權限。可用 `auth_status` 確認目前帳號，再用 `connect_google force=true` 切換 |
 | 「尚未啟用 Google Drive API」 | 到 Google Cloud Console 為該專案啟用 Drive API |
+| Google Cloud Console 的 Publish app 按鈕反灰 | Branding 頁缺少首頁或隱私權政策網址，見三-A 第 3 步 |
 | 「授權已過期或已被撤銷」 | 重新呼叫 `connect_google` |
 
 ---
