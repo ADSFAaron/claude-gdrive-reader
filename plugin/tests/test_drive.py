@@ -174,3 +174,16 @@ def test_non_json_success_response_is_a_clear_error() -> None:
     respx.get(f"{FILES}/x").mock(return_value=httpx.Response(200, text="<html>proxy login</html>"))
     with pytest.raises(DriveError, match="無法解析"):
         drive_client().get_metadata("x")
+
+
+def test_listing_marks_files_too_large_to_read() -> None:
+    from gdrive_reader.drive import MAX_DOWNLOAD_BYTES, DriveEntry, FolderListing
+
+    small = DriveEntry(id="s", name="small.pdf", mime_type="application/pdf", path="small.pdf", depth=0, size=1024)
+    big = DriveEntry(
+        id="b", name="big.pdf", mime_type="application/pdf", path="big.pdf", depth=0, size=MAX_DOWNLOAD_BYTES + 1
+    )
+    lines = format_listing(FolderListing(folder={"id": "f", "name": "F"}, entries=[small, big]), recursive=True)
+    small_line, big_line = (line for line in lines.splitlines() if line.startswith("- "))
+    assert "無法讀取" not in small_line
+    assert "無法讀取內容" in big_line

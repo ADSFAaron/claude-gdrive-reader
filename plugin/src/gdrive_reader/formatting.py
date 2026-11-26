@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .drive import FOLDER_MIME, SHORTCUT_MIME, FolderListing
+from .drive import FOLDER_MIME, MAX_DOWNLOAD_BYTES, SHORTCUT_MIME, FolderListing
 from .sanitize import clean_text
 
 _TYPE_LABELS = {
@@ -59,6 +59,8 @@ def format_listing(listing: FolderListing, recursive: bool) -> str:
         detail = type_label(entry.mime_type)
         if not entry.is_folder:
             detail += f"，{human_size(entry.size)}"
+            if entry.size is not None and entry.size > MAX_DOWNLOAD_BYTES:
+                detail += f"，超過 {human_size(MAX_DOWNLOAD_BYTES)} 上限，無法讀取內容"
         if entry.shortcut_target:
             detail += f"，指向 ID {entry.shortcut_target}（未展開）"
         lines.append(f"- {clean_text(entry.path)}　[{detail}]　id: {entry.id}")

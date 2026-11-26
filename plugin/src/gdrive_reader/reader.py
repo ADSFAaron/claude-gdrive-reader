@@ -17,14 +17,13 @@ from typing import Any
 from charset_normalizer import from_bytes
 from pypdf import PdfReader
 
-from .drive import FOLDER_MIME, SHORTCUT_MIME, DriveClient
+from .drive import FOLDER_MIME, MAX_DOWNLOAD_BYTES, SHORTCUT_MIME, DriveClient
 from .errors import InvalidReference
 from .formatting import human_size, type_label
 from .sanitize import clean_text
 
 log = logging.getLogger(__name__)
 
-MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
 IMAGE_PROBE_BYTES = 64 * 1024
 
 GOOGLE_EXPORTS: dict[str, tuple[str, str]] = {
@@ -198,12 +197,17 @@ def _decode(data: bytes) -> tuple[str, str | None]:
     return data.decode("utf-8", errors="replace"), "無法判斷檔案的文字編碼，以 UTF-8 解碼，無法辨識的字元以 � 表示。"
 
 
+def _type_line(mime: str) -> str:
+    label = type_label(mime)
+    return label if label == mime else f"{label}（{mime}）"
+
+
 def _render(outcome: ReadOutcome, offset: int, max_chars: int) -> str:
     meta = outcome.meta
     lines = [
         f"檔案：{clean_text(meta.get('name'))}",
         f"ID：{meta.get('id')}",
-        f"類型：{type_label(meta.get('mimeType', ''))}（{meta.get('mimeType', '')}）",
+        f"類型：{_type_line(meta.get('mimeType', ''))}",
     ]
     if meta.get("size") is not None:
         lines.append(f"大小：{human_size(int(meta['size']))}")

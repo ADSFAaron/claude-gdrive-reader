@@ -35,6 +35,8 @@ log = logging.getLogger(__name__)
 API_BASE = "https://www.googleapis.com/drive/v3"
 FOLDER_MIME = "application/vnd.google-apps.folder"
 SHORTCUT_MIME = "application/vnd.google-apps.shortcut"
+# Largest file read_file downloads (Google Docs exports are capped separately by Google).
+MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
 
 FILE_FIELDS = (
     "id,name,mimeType,size,modifiedTime,webViewLink,"

@@ -221,6 +221,20 @@ cd backend && uv run pytest && uv run ruff check .   # 後端：參數驗證、l
 
 自動化測試以 mock 取代 Google API，不需要網路或真實帳號，用來檢查授權流程、讀取路徑與錯誤處理的邏輯。GitHub Actions 會在每次 push 時執行兩組測試。實際的 Google 登入與讀檔不在自動化測試範圍內，請依「一、安裝與使用」操作。
 
+### 手動驗收紀錄
+
+2026-11-26，macOS 27.3、Claude Code 2.1.332（終端機版）、Chrome。依「一、安裝與使用」從 GitHub 安裝，使用作者自己的 Google 帳號與 Drive 資料夾。
+
+| 步驟 | 結果 |
+| --- | --- |
+| 安裝 plugin | `/mcp` 顯示 connected |
+| OAuth 授權 | OAuth App 為 In production（未送 Google 審核）。出現「這個應用程式未經 Google 驗證」，點「進階」繼續後，瀏覽器顯示「授權完成」 |
+| 列出資料夾 | 列出 3 個 PDF 與 1 張 JPG。另以本機 CLI 列出一個含 3 個子資料夾的資料夾，子資料夾內的檔案都有列出 |
+| 讀 PDF | 5 頁的 PDF 文字全部讀出，內容正確 |
+| 讀圖片 | 回報 JPEG 格式、827 KB、4096 × 2729 像素，並說明不解析圖片內容 |
+
+測試中發現：列表沒有標出超過 25 MB 的檔案，Claude 誤以為大型 PDF 也能讀取。已修正為在列表中標示「超過上限，無法讀取內容」。
+
 ---
 
 ## 五、疑難排解

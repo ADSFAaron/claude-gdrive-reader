@@ -195,3 +195,12 @@ def test_large_image_is_probed_not_fully_downloaded() -> None:
 def test_corrupt_pdf_is_reported_not_raised() -> None:
     _file("bad", {"name": "bad.pdf", "mimeType": "application/pdf", "size": "9"}, b"%PDF-junk")
     assert "無法解析為 PDF" in read_file(drive_client(), "bad")
+
+
+@respx.mock
+def test_unknown_type_is_shown_once() -> None:
+    respx.get(f"{API_BASE}/files/v1").mock(
+        return_value=httpx.Response(200, json={"id": "v1", "name": "clip.mp4", "mimeType": "video/mp4", "size": "10"})
+    )
+    text = read_file(drive_client(), "v1")
+    assert "類型：video/mp4\n" in text and "不支援解析" in text
