@@ -219,7 +219,7 @@ cd plugin  && uv run pytest && uv run ruff check .   # MCP server：ID 解析、
 cd backend && uv run pytest && uv run ruff check .   # 後端：參數驗證、loopback relay、secret 注入、錯誤轉送
 ```
 
-測試以 mock 取代 Google API，不需要網路或真實帳號。GitHub Actions 會在每次 push 時執行兩組測試。
+自動化測試以 mock 取代 Google API，不需要網路或真實帳號，用來檢查授權流程、讀取路徑與錯誤處理的邏輯。GitHub Actions 會在每次 push 時執行兩組測試。實際的 Google 登入與讀檔不在自動化測試範圍內，請依「一、安裝與使用」操作。
 
 ---
 
