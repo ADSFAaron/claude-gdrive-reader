@@ -233,6 +233,16 @@ cd backend && uv run pytest && uv run ruff check .   # 後端：參數驗證、l
 | 讀 PDF | 5 頁的 PDF 文字全部讀出，內容正確 |
 | 讀圖片 | 回報 JPEG 格式、827 KB、4096 × 2729 像素，並說明不解析圖片內容 |
 
+實際畫面（依序為授權完成、列出資料夾、讀 PDF、讀圖片）：
+
+<img src="docs/images/acceptance-auth.png" alt="瀏覽器顯示「授權完成」" width="500">
+
+<img src="docs/images/acceptance-list.png" alt="Claude 列出資料夾中的 3 個 PDF 與 1 張圖片" width="600">
+
+<img src="docs/images/acceptance-pdf.png" alt="Claude 讀完 5 頁的 PDF" width="600">
+
+<img src="docs/images/acceptance-image.png" alt="Claude 回報圖片的格式、大小與尺寸，並說明不解析圖片內容" width="600">
+
 測試中發現：列表沒有標出超過 25 MB 的檔案，Claude 誤以為大型 PDF 也能讀取。已修正為在列表中標示「超過上限，無法讀取內容」。
 
 ---
